@@ -38,6 +38,7 @@ namespace refactored_umbrella.Controllers
         }
 
         [HttpGet("Test")]
+        [Authorize(Policy = "DepartmentPolicy")]
         public IActionResult Test()
         {
             return Ok(_jwtConfig.Audience);

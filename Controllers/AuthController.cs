@@ -21,17 +21,23 @@ namespace refactored_umbrella.Controllers
         private readonly UserManager<User> _userManager;
         private readonly TokenValidationParameters _tokenValidationParameters;
         private readonly AuthDbContext _authDbContext;
+        private readonly RoleManager<IdentityRole> _roleManager;
+        private readonly ILogger<AuthController> _logger;
 
         public AuthController(
             IOptions<JwtConfig> jwtConfig,
             UserManager<User> userManager,
             TokenValidationParameters tokenValidationParameters,
-            AuthDbContext authDbContext)
+            AuthDbContext authDbContext,
+            RoleManager<IdentityRole> roleManager,
+            ILogger<AuthController> logger)
         {
             _jwtConfig = jwtConfig.Value;
             _userManager = userManager;
             _tokenValidationParameters = tokenValidationParameters;
             _authDbContext = authDbContext;
+            _roleManager = roleManager;
+            _logger = logger;
         }
 
         [HttpPost]
@@ -90,6 +96,7 @@ namespace refactored_umbrella.Controllers
 
             if (result.Succeeded)
             {
+                await _userManager.AddToRoleAsync(newUser, "AppUser");
                 var authResponse = await GetTokens(newUser);
                 return Ok(authResponse);
             }
@@ -246,15 +253,7 @@ namespace refactored_umbrella.Controllers
 
         private async Task<AuthResponse> GetTokens(User user)
         {
-            var claims = new[]
-            {
-                new Claim(JwtRegisteredClaimNames.Sub, _jwtConfig.Subject),
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                new Claim(JwtRegisteredClaimNames.Iat, DateTime.Now.ToString()),
-                new Claim("Id", user.Id),
-                new Claim("Email", user.Email),
-                new Claim("UserName", user.UserName)
-            };
+            var claims = await GetAllValidClaims(user);
 
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtConfig.Key));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -288,6 +287,46 @@ namespace refactored_umbrella.Controllers
             return await Task.FromResult(authResponse);
         }
 
+        // Get all valid claims for the corresponding user
+        private async Task<List<Claim>> GetAllValidClaims(User user)
+        {
+            var _options = new IdentityOptions();
+
+            var claims = new List<Claim>
+            {
+                new Claim(JwtRegisteredClaimNames.Sub, _jwtConfig.Subject),
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                new Claim(JwtRegisteredClaimNames.Iat, DateTime.Now.ToString()),
+                new Claim("Id", user.Id),
+                new Claim("Email", user.Email),
+                new Claim("UserName", user.UserName)
+            };
+
+            // Getting the claims that we have assigned to the user  
+            var userClaims = await _userManager.GetClaimsAsync(user);
+            claims.AddRange(userClaims);
+
+            // Get the user role  andd add it to the claims
+            var userRoles = await _userManager.GetRolesAsync(user);
+
+            foreach (var userRole in userRoles)
+            {
+                var role = await _roleManager.FindByNameAsync(userRole);
+
+                if (role != null)
+                {
+                    claims.Add(new Claim(ClaimTypes.Role, userRole));
+
+                    var roleClaims = await _roleManager.GetClaimsAsync(role);
+                    foreach (var roleClaim in roleClaims)
+                    {
+                        claims.Add(roleClaim);
+                    }
+                }
+            }
+
+            return claims;
+        }
         private string RandomString(int length)
         {
             var random = new Random();

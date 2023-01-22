@@ -34,7 +34,9 @@ var tokenValidationParameters = new TokenValidationParameters
     ValidIssuer = builder.Configuration["JwtConfig:Issuer"],
     ValidAudience = builder.Configuration["jwtConfig:Audience"],
     IssuerSigningKey = new SymmetricSecurityKey(key),
-    RequireExpirationTime = true
+    RequireExpirationTime = true,
+    // set clockskew to zero so tokens expire exactly at token expiration time (instead of 5 minutes later)
+    ClockSkew = TimeSpan.Zero
 };
 
 builder.Services.AddSingleton(tokenValidationParameters);
@@ -55,6 +57,16 @@ builder.Services.AddAuthentication(options =>
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Open", builder => builder.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
+});
+
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("DepartmentPolicy", policy => policy.RequireClaim("department"));
+});
 
 var app = builder.Build();
 
